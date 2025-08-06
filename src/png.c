@@ -20,7 +20,9 @@ void png_destroy(PngImage* png) {
     if (png != NULL) { free(png->final_pixel_data); free(png->palette); free(png); }
 }
 
-PngImage* png_load_from_data(const unsigned char* data, size_t size) {
+PngImage*
+png_load_from_data(const unsigned char* data, size_t size)
+{
     const uint8_t png_sig_bytes[8] = {137, 80, 78, 71, 13, 10, 26, 10};
     if (size < 8 || memcmp(data, png_sig_bytes, 8) != 0) return NULL;
     PngImage* png = calloc(1, sizeof(PngImage));
@@ -81,6 +83,9 @@ PngImage* png_load_from_data(const unsigned char* data, size_t size) {
     free(compressed_data);
     png->final_pixel_size = png->width * png->height * png->bytes_per_pixel;
     png->final_pixel_data = calloc(1, png->final_pixel_size);
+    if (!png->final_pixel_data) {
+        return NULL;
+    }
     if (png->interlace_method == 0) {
         size_t stride = (png->width * png->bit_depth * source_bpp_calc + 7) / 8;
         unsigned char* unfiltered_data = malloc(png->height * stride);
@@ -103,6 +108,65 @@ PngImage* png_load_from_data(const unsigned char* data, size_t size) {
     }
     free(uncompressed_data);
     return png;
+}
+
+size_t
+fweight(FILE *fptr)
+{
+    long fsize;
+    fseek(fptr, 0, SEEK_END);
+    fsize = ftell(fptr);
+    rewind(fptr);
+    if (fsize < 0) {
+        return 0;
+    }
+    return (size_t)fsize;
+}
+
+unsigned char *
+_fread(FILE *fptr, size_t fsize)
+{
+    unsigned char *buffer;
+    size_t buffer_size;
+    buffer = malloc(fsize);
+    if (!buffer) {
+        return NULL;
+    }
+    buffer_size = fread(buffer, 1, fsize, fptr);
+    if (buffer_size != fsize) {
+        free(buffer);
+        return NULL;
+    }
+    fclose(fptr);
+    return buffer;
+}
+
+PngImage*
+png_load_from_file(const char *fname)
+{
+    FILE *fptr;
+    size_t fsize;
+    unsigned char *buffer;
+
+    PngImage* img;
+
+    fptr = fopen(fname, "rb");
+    if (!fptr) {
+        return NULL;
+    }
+    fsize = fweight(fptr);
+    if (!fsize) {
+        fclose(fptr);
+        return NULL;
+    }
+    buffer = _fread(fptr, fsize);
+    if (!buffer) {
+        fclose(fptr);
+        return NULL;
+    }
+
+    img = png_load_from_data(buffer, fsize);
+    return img;
 }
 
 static void place_pixels(PngImage* png, const unsigned char* pass_pixels, int pass_index, uint32_t pass_width, uint32_t pass_height, const uint8_t gamma_lut[256]) {

@@ -31,6 +31,7 @@ typedef struct PngImage {
 } PngImage;
 
 PngImage* png_load_from_data(const unsigned char* data, size_t size);
+PngImage* png_load_from_file(const char *fname);
 void png_destroy(PngImage* png);
 
 #endif
