@@ -2,9 +2,9 @@ Convertisseur PNG vers BMP en C
 
 Ce projet est un utilitaire en ligne de commande écrit en C pur qui convertit des images au format PNG vers le format BMP 24-bits.
 
-    Analyse PNG manuelle : Lit et interprète la structure d'un fichier PNG sans dépendre de bibliothèques externes comme libpng.
+    Analyse PNG manuelle : Lit et interprète la structure d'un fichier PNG sans dépendre de bibliothèques externes.
 
-    Gestion des Chunks : Identifie et traite les chunks critiques comme IHDR (en-tête), IDAT (données d'image) et IEND (fin de l'image).
+    Gestion des Chunks : Identifie et traite les chunks critiques.
 
     Décompression zlib : Concatène les données des chunks IDAT et les décompresse en utilisant la bibliothèque zlib pour obtenir les données de pixels brutes (filtrées).
 
@@ -45,3 +45,4 @@ Le code est organisé en plusieurs modules pour une meilleure séparation des pr
     png.c / png.h : Cœur de la logique PNG. Responsable de la lecture du fichier, de l'analyse des chunks, de la décompression et du défiltrage des données d'image.
 
     png_to_bmp.c / png_to_bmp.h : Module de conversion BMP. Construit les en-têtes et écrit les données de pixels dans un fichier au format BMP.
+
