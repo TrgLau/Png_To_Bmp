@@ -12,7 +12,7 @@
 const int adam7_start_x[] = {0, 4, 0, 2, 0, 1, 0}; const int adam7_start_y[] = {0, 0, 4, 0, 2, 0, 1};
 const int adam7_step_x[]  = {8, 8, 4, 4, 2, 2, 1}; const int adam7_step_y[]  = {8, 8, 8, 4, 4, 2, 2};
 static int unfilter_pass(const PngImage* png, const unsigned char* src, unsigned char* dst, uint32_t pass_width, uint32_t pass_height);
-static void place_pixels(PngImage* png, const unsigned char* pass_pixels, int pass_index, uint32_t pass_width, uint32_t pass_height, const uint8_t gamma_lut[256]);
+static void place_pixels(PngImage* png, const unsigned char* pass_pixels, int pass_index, uint32_t pass_width, uint32_t pass_height);
 static uint16_t get_pixel_value_at(const unsigned char* data, uint32_t x, uint32_t y, uint32_t pass_width, uint8_t bit_depth);
 static uint32_t ntohl_manual(uint32_t n); static uint16_t ntohs_manual(uint16_t n);
 
@@ -20,7 +20,7 @@ void png_destroy(PngImage* png) {
     if (png != NULL) { free(png->final_pixel_data); free(png->palette); free(png); }
 }
 
-PngImage*
+PngImage* 
 png_load_from_data(const unsigned char* data, size_t size)
 {
     const uint8_t png_sig_bytes[8] = {137, 80, 78, 71, 13, 10, 26, 10};
@@ -71,10 +71,6 @@ png_load_from_data(const unsigned char* data, size_t size)
         } else if (strncmp((const char*)chunk_type, "IEND", 4) == 0) { break; }
         current_ptr += 12 + chunk_length;
     }
-    uint8_t gamma_lut[256];
-    for(int i=0; i<256; ++i) {
-        gamma_lut[i] = (uint8_t)roundf(powf(i / 255.0f, png->file_gamma) * 255.0f);
-    }
     size_t source_bpp_calc = (png->color_type==2)?3:(png->color_type==6)?4:(png->color_type==4)?2:1;
     size_t uncompressed_size = png->height * (1 + (png->width * png->bit_depth * source_bpp_calc + 7) / 8);
     unsigned char* uncompressed_data = malloc(uncompressed_size * 2);
@@ -90,7 +86,7 @@ png_load_from_data(const unsigned char* data, size_t size)
         size_t stride = (png->width * png->bit_depth * source_bpp_calc + 7) / 8;
         unsigned char* unfiltered_data = malloc(png->height * stride);
         unfilter_pass(png, uncompressed_data, unfiltered_data, png->width, png->height);
-        place_pixels(png, unfiltered_data, -1, png->width, png->height, gamma_lut);
+        place_pixels(png, unfiltered_data, -1, png->width, png->height);
         free(unfiltered_data);
     } else {
         const unsigned char* data_ptr = uncompressed_data;
@@ -101,7 +97,7 @@ png_load_from_data(const unsigned char* data, size_t size)
             size_t pass_stride = (pass_w * png->bit_depth * source_bpp_calc + 7) / 8;
             unsigned char* unfiltered_pass = malloc(pass_h * pass_stride);
             unfilter_pass(png, data_ptr, unfiltered_pass, pass_w, pass_h);
-            place_pixels(png, unfiltered_pass, i, pass_w, pass_h, gamma_lut);
+            place_pixels(png, unfiltered_pass, i, pass_w, pass_h);
             data_ptr += pass_h * (1 + pass_stride);
             free(unfiltered_pass);
         }
@@ -169,9 +165,17 @@ png_load_from_file(const char *fname)
     return img;
 }
 
-static void place_pixels(PngImage* png, const unsigned char* pass_pixels, int pass_index, uint32_t pass_width, uint32_t pass_height, const uint8_t gamma_lut[256]) {
+static void place_pixels(PngImage* png, const unsigned char* pass_pixels, int pass_index, uint32_t pass_width, uint32_t pass_height) 
+{
     size_t source_bpp = (png->bit_depth < 8) ? 1 : (png->bit_depth / 8) * ((png->color_type==2)?3:(png->color_type==6)?4:(png->color_type==4)?2:1);
-
+    const float gamma = 2.2f;
+    const float inverse_gamma = 1.0f / gamma;
+    const float bg_r_gamma = 1.0f;
+    const float bg_g_gamma = 1.0f;
+    const float bg_b_gamma = 1.0f;
+    const float bg_r_linear = powf(bg_r_gamma, gamma);
+    const float bg_g_linear = powf(bg_g_gamma, gamma);
+    const float bg_b_linear = powf(bg_b_gamma, gamma);
     for (uint32_t py = 0; py < pass_height; py++) {
         for (uint32_t px = 0; px < pass_width; px++) {
             uint32_t final_x, final_y;
@@ -179,36 +183,67 @@ static void place_pixels(PngImage* png, const unsigned char* pass_pixels, int pa
             else { final_x = px * adam7_step_x[pass_index] + adam7_start_x[pass_index]; final_y = py * adam7_step_y[pass_index] + adam7_start_y[pass_index]; }
             if (final_x >= png->width || final_y >= png->height) continue;
             unsigned char* out_pixel = png->final_pixel_data + (final_y * png->width + final_x) * png->bytes_per_pixel;
-            uint8_t r=0, g=0, b=0;
-            bool is_transparent = false;
-            if (png->color_type == 3) {
-                uint16_t index = get_pixel_value_at(pass_pixels, px, py, pass_width, png->bit_depth);
-                if (index < png->palette_size) {
-                    if (png->palette[index].a < 128) { is_transparent = true; }
-                    else { r = png->palette[index].r; g = png->palette[index].g; b = png->palette[index].b; }
+            uint8_t r = 0, g = 0, b = 0, a = 255;
+            switch (png->color_type) {
+                case 3: {
+                    uint16_t index = get_pixel_value_at(pass_pixels, px, py, pass_width, png->bit_depth);
+                    if (index < png->palette_size) {
+                        r = png->palette[index].r; g = png->palette[index].g; b = png->palette[index].b; a = png->palette[index].a;
+                    }
+                    break;
                 }
-            } else if (png->color_type == 0 || png->color_type == 4) {
-                uint16_t gray16 = get_pixel_value_at(pass_pixels, px, py, pass_width * source_bpp, png->bit_depth);
-                if (png->has_transparency_key && gray16 == png->transparency_key.r) { is_transparent = true; }
-                else { r = g = b = (png->bit_depth == 16) ? (gray16 >> 8) : (gray16 * (255.0f / ((1 << png->bit_depth) - 1))); }
-            } else if (png->color_type == 2 || png->color_type == 6) {
-                if (png->bit_depth == 16) {
-                    const uint16_t* in16 = (const uint16_t*)(pass_pixels + (py * pass_width + px) * source_bpp);
-                    uint16_t r16 = ntohs_manual(in16[0]), g16 = ntohs_manual(in16[1]), b16 = ntohs_manual(in16[2]);
-                    if (png->has_transparency_key && r16==png->transparency_key.r && g16==png->transparency_key.g && b16==png->transparency_key.b) { is_transparent = true; }
-                    else { r = r16 >> 8; g = g16 >> 8; b = b16 >> 8; }
-                } else {
-                    const uint8_t* in8 = pass_pixels + (py * pass_width + px) * source_bpp;
-                    r = in8[0]; g = in8[1]; b = in8[2];
+                case 0: {
+                    uint16_t gray_val = get_pixel_value_at(pass_pixels, px, py, pass_width * source_bpp, png->bit_depth);
+                    if (png->has_transparency_key && gray_val == png->transparency_key.r) { a = 0; }
+                    r = g = b = (png->bit_depth == 16) ? (gray_val >> 8) : (gray_val * (255.0f / ((1 << png->bit_depth) - 1)));
+                    break;
+                }
+                case 4: {
+                    if (png->bit_depth == 16) {
+                        const uint16_t* in16 = (const uint16_t*)(pass_pixels + (py * pass_width + px) * source_bpp);
+                        r = g = b = ntohs_manual(in16[0]) >> 8; a = ntohs_manual(in16[1]) >> 8;
+                    } else {
+                        const uint8_t* in8 = pass_pixels + (py * pass_width + px) * source_bpp;
+                        r = g = b = in8[0]; a = in8[1];
+                    }
+                    break;
+                }
+                case 2: {
+                    if (png->bit_depth == 16) {
+                        const uint16_t* in16 = (const uint16_t*)(pass_pixels + (py * pass_width + px) * source_bpp);
+                        uint16_t r16 = ntohs_manual(in16[0]), g16 = ntohs_manual(in16[1]), b16 = ntohs_manual(in16[2]);
+                        if (png->has_transparency_key && r16 == png->transparency_key.r && g16 == png->transparency_key.g && b16 == png->transparency_key.b) { a = 0; }
+                        r = r16 >> 8; g = g16 >> 8; b = b16 >> 8;
+                    } else {
+                        const uint8_t* in8 = pass_pixels + (py * pass_width + px) * source_bpp;
+                        r = in8[0]; g = in8[1]; b = in8[2];
+                    }
+                    break;
+                }
+                case 6: {
+                    if (png->bit_depth == 16) {
+                        const uint16_t* in16 = (const uint16_t*)(pass_pixels + (py * pass_width + px) * source_bpp);
+                        r = ntohs_manual(in16[0]) >> 8; g = ntohs_manual(in16[1]) >> 8; b = ntohs_manual(in16[2]) >> 8; a = ntohs_manual(in16[3]) >> 8;
+                    } else {
+                        const uint8_t* in8 = pass_pixels + (py * pass_width + px) * source_bpp;
+                        r = in8[0]; g = in8[1]; b = in8[2]; a = in8[3];
+                    }
+                    break;
                 }
             }
-            if (is_transparent) {
-                out_pixel[0] = out_pixel[1] = out_pixel[2] = 128;
-            } else {
-                out_pixel[0] = gamma_lut[r];
-                out_pixel[1] = gamma_lut[g];
-                out_pixel[2] = gamma_lut[b];
-            }
+            const float fg_r_gamma = r / 255.0f;
+            const float fg_g_gamma = g / 255.0f;
+            const float fg_b_gamma = b / 255.0f;
+            const float alpha_f = a / 255.0f;
+            const float fg_r_linear = powf(fg_r_gamma, gamma);
+            const float fg_g_linear = powf(fg_g_gamma, gamma);
+            const float fg_b_linear = powf(fg_b_gamma, gamma);
+            const float out_r_linear = fg_r_linear * alpha_f + bg_r_linear * (1.0f - alpha_f);
+            const float out_g_linear = fg_g_linear * alpha_f + bg_g_linear * (1.0f - alpha_f);
+            const float out_b_linear = fg_b_linear * alpha_f + bg_b_linear * (1.0f - alpha_f);
+            out_pixel[0] = (uint8_t)(powf(out_r_linear, inverse_gamma) * 255.0f);
+            out_pixel[1] = (uint8_t)(powf(out_g_linear, inverse_gamma) * 255.0f);
+            out_pixel[2] = (uint8_t)(powf(out_b_linear, inverse_gamma) * 255.0f);
         }
     }
 }

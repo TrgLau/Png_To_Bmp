@@ -9,8 +9,7 @@
 #include "../headers/png_to_bmp.h"
 #include "../headers/logger.h"
 
-int
-main(int argc, char *argv[]) 
+int main(int argc, char *argv[]) 
 {
     Logger logger;
 
