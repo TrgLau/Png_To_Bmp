@@ -17,6 +17,7 @@ Ce projet est un utilitaire en ligne de commande écrit en C pur qui convertit d
 Utilisation
 -----------
 L'exécutable prend deux arguments en ligne de commande : le chemin vers le fichier source PNG et le chemin vers le fichier de destination BMP.
+
 Syntaxe
 
     ./converter mon_image.png image_convertie.bmp
@@ -31,7 +32,7 @@ Développement
 ---------
 Prérequis
 
-    zlip
+    zlib
 
 Build sous MinGW64
 
@@ -49,4 +50,5 @@ Le code est organisé en plusieurs modules pour une meilleure séparation des pr
     png.c / png.h : Cœur de la logique PNG. Responsable de la lecture du fichier, de l'analyse des chunks, de la décompression et du défiltrage des données d'image.
 
     png_to_bmp.c / png_to_bmp.h : Module de conversion BMP. Construit les en-têtes et écrit les données de pixels dans un fichier au format BMP.
+
 
